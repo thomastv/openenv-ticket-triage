@@ -1,0 +1,141 @@
+{
+  "task_id": "hard",
+  "name": "Hard Batch Triage",
+  "max_steps": 55,
+  "tickets": [
+    {
+      "ticket_id": "H-001",
+      "subject": "Production outage and payment failures",
+      "body": "Users cannot complete checkout and dashboard is timing out globally.",
+      "customer_tier": "enterprise",
+      "product_area": "platform",
+      "sentiment": "critical",
+      "sla_hours_remaining": 1,
+      "language": "en",
+      "account_health_flags": ["vip", "revenue_critical"],
+      "prior_interactions": 4
+    },
+    {
+      "ticket_id": "H-002",
+      "subject": "Chargeback threat for duplicate annual invoice",
+      "body": "Finance found two annual invoices for the same subscription period.",
+      "customer_tier": "enterprise",
+      "product_area": "billing",
+      "sentiment": "frustrated",
+      "sla_hours_remaining": 6,
+      "language": "en",
+      "account_health_flags": ["renewal_risk"],
+      "prior_interactions": 1
+    },
+    {
+      "ticket_id": "H-003",
+      "subject": "Possible takeover: admin role changed",
+      "body": "Permission roles changed overnight and unknown IP access is visible.",
+      "customer_tier": "enterprise",
+      "product_area": "security",
+      "sentiment": "urgent",
+      "sla_hours_remaining": 2,
+      "language": "en",
+      "account_health_flags": ["security_risk", "compliance_risk"],
+      "prior_interactions": 2
+    },
+    {
+      "ticket_id": "H-004",
+      "subject": "Feature request for custom SSO claim mapping",
+      "body": "Need optional claim mapping support for regional identity providers.",
+      "customer_tier": "pro",
+      "product_area": "auth",
+      "sentiment": "positive",
+      "sla_hours_remaining": 72,
+      "language": "en",
+      "account_health_flags": [],
+      "prior_interactions": 0
+    },
+    {
+      "ticket_id": "H-005",
+      "subject": "Cannot export reports in EU region",
+      "body": "CSV export fails with timeout only for our EU workspace.",
+      "customer_tier": "pro",
+      "product_area": "reporting",
+      "sentiment": "neutral",
+      "sla_hours_remaining": 18,
+      "language": "en",
+      "account_health_flags": [],
+      "prior_interactions": 3
+    },
+    {
+      "ticket_id": "H-006",
+      "subject": "Harassment in shared comments",
+      "body": "A user keeps posting abusive comments and threatening language.",
+      "customer_tier": "free",
+      "product_area": "collaboration",
+      "sentiment": "distressed",
+      "sla_hours_remaining": 8,
+      "language": "en",
+      "account_health_flags": ["abuse_reported"],
+      "prior_interactions": 0
+    }
+  ],
+  "answer_key": {
+    "H-001": {
+      "category": "outage_report",
+      "priority": "urgent",
+      "queue": "tech_support",
+      "next_action": "escalate_engineering",
+      "response_required_keywords": ["incident", "engineering", "update"],
+      "response_prohibited_phrases": ["not critical", "later"],
+      "response_max_chars": 700,
+      "high_risk_misroute": true
+    },
+    "H-002": {
+      "category": "billing_dispute",
+      "priority": "high",
+      "queue": "billing_ops",
+      "next_action": "refund_review",
+      "response_required_keywords": ["billing", "review", "next"],
+      "response_prohibited_phrases": ["no refund", "your fault"],
+      "response_max_chars": 700,
+      "high_risk_misroute": true
+    },
+    "H-003": {
+      "category": "abuse_report",
+      "priority": "urgent",
+      "queue": "trust_safety",
+      "next_action": "escalate_security",
+      "response_required_keywords": ["security", "investigate", "protect"],
+      "response_prohibited_phrases": ["share password", "ignore"],
+      "response_max_chars": 700,
+      "high_risk_misroute": true
+    },
+    "H-004": {
+      "category": "feature_request",
+      "priority": "low",
+      "queue": "csm",
+      "next_action": "request_info",
+      "response_required_keywords": ["request", "details", "roadmap"],
+      "response_prohibited_phrases": ["never", "cannot"],
+      "response_max_chars": 700,
+      "high_risk_misroute": false
+    },
+    "H-005": {
+      "category": "bug_report",
+      "priority": "medium",
+      "queue": "tech_support",
+      "next_action": "provide_steps",
+      "response_required_keywords": ["export", "steps", "logs"],
+      "response_prohibited_phrases": ["won't fix", "ignore"],
+      "response_max_chars": 700,
+      "high_risk_misroute": false
+    },
+    "H-006": {
+      "category": "abuse_report",
+      "priority": "high",
+      "queue": "trust_safety",
+      "next_action": "escalate_security",
+      "response_required_keywords": ["safety", "report", "next"],
+      "response_prohibited_phrases": ["handle it yourself", "no issue"],
+      "response_max_chars": 700,
+      "high_risk_misroute": true
+    }
+  }
+}

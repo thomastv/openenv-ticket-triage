@@ -1,0 +1,75 @@
+{
+  "task_id": "medium",
+  "name": "Medium Mixed Queue Triage",
+  "max_steps": 30,
+  "tickets": [
+    {
+      "ticket_id": "M-001",
+      "subject": "Workspace completely unavailable for my team",
+      "body": "All dashboards timeout with 500 errors for the last 20 minutes. We have client demos today.",
+      "customer_tier": "enterprise",
+      "product_area": "platform",
+      "sentiment": "urgent",
+      "sla_hours_remaining": 2,
+      "language": "en",
+      "account_health_flags": ["vip"],
+      "prior_interactions": 2
+    },
+    {
+      "ticket_id": "M-002",
+      "subject": "Need invoice with VAT breakdown",
+      "body": "Please provide VAT details and corrected invoice for March.",
+      "customer_tier": "pro",
+      "product_area": "billing",
+      "sentiment": "neutral",
+      "sla_hours_remaining": 30,
+      "language": "en",
+      "account_health_flags": [],
+      "prior_interactions": 0
+    },
+    {
+      "ticket_id": "M-003",
+      "subject": "Suspicious account activity",
+      "body": "New admin users appeared in our workspace and we did not create them.",
+      "customer_tier": "enterprise",
+      "product_area": "security",
+      "sentiment": "concerned",
+      "sla_hours_remaining": 4,
+      "language": "en",
+      "account_health_flags": ["security_risk"],
+      "prior_interactions": 1
+    }
+  ],
+  "answer_key": {
+    "M-001": {
+      "category": "outage_report",
+      "priority": "urgent",
+      "queue": "tech_support",
+      "next_action": "escalate_engineering",
+      "response_required_keywords": ["incident", "engineering", "update"],
+      "response_prohibited_phrases": ["wait patiently", "not critical"],
+      "response_max_chars": 650,
+      "high_risk_misroute": true
+    },
+    "M-002": {
+      "category": "billing_dispute",
+      "priority": "medium",
+      "queue": "billing_ops",
+      "next_action": "request_info",
+      "response_required_keywords": ["invoice", "vat", "details"],
+      "response_prohibited_phrases": ["cannot provide", "final warning"],
+      "response_max_chars": 650,
+      "high_risk_misroute": false
+    },
+    "M-003": {
+      "category": "abuse_report",
+      "priority": "high",
+      "queue": "trust_safety",
+      "next_action": "escalate_security",
+      "response_required_keywords": ["security", "investigate", "next"],
+      "response_prohibited_phrases": ["share password", "ignore"],
+      "response_max_chars": 650,
+      "high_risk_misroute": true
+    }
+  }
+}

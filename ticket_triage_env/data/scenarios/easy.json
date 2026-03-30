@@ -1,0 +1,53 @@
+{
+  "task_id": "easy",
+  "name": "Easy Ticket Triage",
+  "max_steps": 18,
+  "tickets": [
+    {
+      "ticket_id": "E-001",
+      "subject": "Charged twice for monthly plan",
+      "body": "I was charged twice this month. Please refund one of the charges and confirm.",
+      "customer_tier": "pro",
+      "product_area": "billing",
+      "sentiment": "frustrated",
+      "sla_hours_remaining": 24,
+      "language": "en",
+      "account_health_flags": ["payment_anomaly"],
+      "prior_interactions": 0
+    },
+    {
+      "ticket_id": "E-002",
+      "subject": "Cannot login after password reset",
+      "body": "I reset my password but still cannot login. Getting token expired error.",
+      "customer_tier": "free",
+      "product_area": "auth",
+      "sentiment": "neutral",
+      "sla_hours_remaining": 36,
+      "language": "en",
+      "account_health_flags": [],
+      "prior_interactions": 1
+    }
+  ],
+  "answer_key": {
+    "E-001": {
+      "category": "billing_dispute",
+      "priority": "high",
+      "queue": "billing_ops",
+      "next_action": "refund_review",
+      "response_required_keywords": ["refund", "billing", "next"],
+      "response_prohibited_phrases": ["not our fault", "calm down"],
+      "response_max_chars": 600,
+      "high_risk_misroute": true
+    },
+    "E-002": {
+      "category": "access_issue",
+      "priority": "medium",
+      "queue": "tech_support",
+      "next_action": "provide_steps",
+      "response_required_keywords": ["login", "steps", "next"],
+      "response_prohibited_phrases": ["ignored", "cannot help"],
+      "response_max_chars": 600,
+      "high_risk_misroute": false
+    }
+  }
+}

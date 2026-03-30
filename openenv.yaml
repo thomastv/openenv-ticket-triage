@@ -1,0 +1,26 @@
+name: customer-support-ticket-triage
+description: Deterministic customer support ticket triage environment for agent evaluation
+version: 0.1.0
+author: thoma
+license: MIT
+tags:
+  - openenv
+  - customer-support
+  - triage
+  - evaluation
+tasks:
+  - id: easy
+    name: Easy Ticket Triage
+    difficulty: easy
+  - id: medium
+    name: Medium Mixed Queue Triage
+    difficulty: medium
+  - id: hard
+    name: Hard Batch Triage
+    difficulty: hard
+entrypoints:
+  app: ticket_triage_env.server.app:app
+interfaces:
+  - reset
+  - step
+  - state
