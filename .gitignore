@@ -24,4 +24,10 @@ htmlcov/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local env files
+.env
+.env.*
+!.env.example
+
 code_review_improvements/

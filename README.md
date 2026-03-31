@@ -77,11 +77,35 @@ docker run --rm -p 8000:8000 ticket-triage-env:latest
 
 ## Baseline Inference
 
-Set env vars:
-- `OPENAI_API_KEY` (required)
-- `MODEL_NAME` (optional)
-- `API_BASE_URL` (optional)
+Set env vars (recommended via `.env.example`):
+- `LLM_PROVIDER` (recommended: `gemini` or `openai`)
+- `LLM_API_KEY` (required)
+- `LLM_MODEL` (recommended)
+- `LLM_API_BASE_URL` (optional)
+- Backward compatibility: `OPENAI_API_KEY`, `MODEL_NAME`, `API_BASE_URL`
+- `HF_TOKEN` (optional fallback token)
 - `ENV_BASE_URL` (optional)
+- `MAX_STEPS` (optional)
+- `TEMPERATURE` (optional)
+- `SEED` (optional)
+- `LOG_LEVEL` (optional server logging level)
+
+Gemini example (OpenAI-compatible endpoint):
+
+```bash
+LLM_PROVIDER=gemini
+LLM_API_KEY=your_gemini_api_key
+LLM_MODEL=gemini-2.5-flash-lite
+# Optional, auto-selected when provider=gemini:
+# LLM_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+```
+
+Quick setup:
+
+```bash
+cp .env.example .env
+# Fill .env values, then export/load in your shell
+```
 
 Run baseline:
 
