@@ -89,6 +89,9 @@ Set env vars (recommended via `.env.example`):
 - `TEMPERATURE` (optional)
 - `SEED` (optional)
 - `LOG_LEVEL` (optional server logging level)
+- `LOG_TO_FILE` and `LOG_FILE_PATH` (optional server file logging)
+- `INFERENCE_VERBOSE` (optional inference verbosity)
+- `INFERENCE_LOG_TO_FILE` and `INFERENCE_LOG_FILE_PATH` (optional inference file logging)
 
 Gemini example (OpenAI-compatible endpoint):
 
@@ -128,6 +131,18 @@ Run baseline:
 
 ```bash
 python inference.py
+```
+
+File logging examples:
+
+```bash
+# Server JSON logs to file
+LOG_TO_FILE=1
+LOG_FILE_PATH=logs/server.jsonl
+
+# Inference logs to file (respects INFERENCE_VERBOSE level)
+INFERENCE_LOG_TO_FILE=1
+INFERENCE_LOG_FILE_PATH=logs/inference.log
 ```
 
 ## Validation

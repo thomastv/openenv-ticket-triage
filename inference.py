@@ -172,6 +172,14 @@ def resolve_config() -> Dict[str, Any]:
     retry_max = int(os.getenv("LLM_RETRY_MAX", "2"))
     retry_seconds = float(os.getenv("LLM_RETRY_SECONDS", "35"))
     max_llm_calls_per_task = int(os.getenv("MAX_LLM_CALLS_PER_TASK", "8"))
+    verbose = os.getenv("INFERENCE_VERBOSE", "0").strip().lower() in {"1", "true", "yes", "on"}
+    inference_log_to_file = os.getenv("INFERENCE_LOG_TO_FILE", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    inference_log_file_path = os.getenv("INFERENCE_LOG_FILE_PATH", "logs/inference.log")
 
     if provider == "ollama" and not api_key:
         # OpenAI-compatible Ollama endpoints typically accept any non-empty key.
@@ -189,6 +197,9 @@ def resolve_config() -> Dict[str, Any]:
         "retry_max": retry_max,
         "retry_seconds": retry_seconds,
         "max_llm_calls_per_task": max_llm_calls_per_task,
+        "verbose": verbose,
+        "inference_log_to_file": inference_log_to_file,
+        "inference_log_file_path": inference_log_file_path,
     }
 
 
@@ -278,12 +289,13 @@ def call_model_for_ticket(
     last_error: Exception | None = None
     for attempt in range(config["retry_max"] + 1):
         try:
-            LOGGER.info(
-                "llm_request ticket_id=%s attempt=%s/%s",
-                ticket.get("ticket_id"),
-                attempt + 1,
-                config["retry_max"] + 1,
-            )
+            if config["verbose"]:
+                LOGGER.info(
+                    "llm_request ticket_id=%s attempt=%s/%s",
+                    ticket.get("ticket_id"),
+                    attempt + 1,
+                    config["retry_max"] + 1,
+                )
             completion = client.chat.completions.create(
                 model=config["model"],
                 temperature=config["temperature"],
@@ -293,7 +305,17 @@ def call_model_for_ticket(
                 ],
             )
             content = completion.choices[0].message.content or "{}"
-            parsed = json.loads(content)
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                LOGGER.error(
+                    "llm_response_parse_failed ticket_id=%s error=%s raw_preview=%s",
+                    ticket.get("ticket_id"),
+                    str(exc),
+                    content[:200],
+                )
+                break
             raw_plan = {
                 "category": parsed.get("category"),
                 "priority": parsed.get("priority"),
@@ -302,7 +324,7 @@ def call_model_for_ticket(
                 "response_text": parsed.get("response_text"),
             }
             normalized_plan = _normalize_plan(raw_plan, ticket)
-            if normalized_plan != raw_plan:
+            if config["verbose"] and normalized_plan != raw_plan:
                 LOGGER.info(
                     "llm_plan_normalized ticket_id=%s raw=%s normalized=%s",
                     ticket.get("ticket_id"),
@@ -313,7 +335,7 @@ def call_model_for_ticket(
         except RateLimitError as exc:
             last_error = exc
             wait_seconds = _extract_retry_seconds(exc, config["retry_seconds"])
-            LOGGER.warning(
+            LOGGER.error(
                 "llm_rate_limited ticket_id=%s attempt=%s/%s wait_seconds=%.2f error=%s",
                 ticket.get("ticket_id"),
                 attempt + 1,
@@ -334,7 +356,7 @@ def call_model_for_ticket(
             break
 
     # Fallback guarantees progress when rate-limited or response malformed.
-    LOGGER.warning(
+    LOGGER.error(
         "llm_fallback_heuristic ticket_id=%s reason=%s",
         ticket.get("ticket_id"),
         type(last_error).__name__ if last_error else "unknown",
@@ -344,7 +366,8 @@ def call_model_for_ticket(
 
 def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
     env_client = TicketTriageEnvClient(base_url=config["env_base"])
-    LOGGER.info("env_request method=POST path=/reset task_id=%s", task_id)
+    if config["verbose"]:
+        LOGGER.info("env_request method=POST path=/reset task_id=%s", task_id)
     result = env_client.reset(task_id=task_id)
 
     ticket_plans: Dict[str, Dict[str, Any]] = {}
@@ -353,7 +376,8 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
     for step_idx in range(config["max_steps"]):
         if result.get("done"):
             final_score = float(result.get("info", {}).get("final_score", 0.0))
-            LOGGER.info("task_done task_id=%s step=%s final_score=%.3f", task_id, step_idx, final_score)
+            if config["verbose"]:
+                LOGGER.info("task_done task_id=%s step=%s final_score=%.3f", task_id, step_idx, final_score)
             break
 
         observation = result["observation"]
@@ -368,12 +392,13 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
                 ticket_plans[ticket_id] = call_model_for_ticket(client, ticket, config)
                 llm_calls += 1
             else:
-                LOGGER.warning(
-                    "llm_budget_exceeded task_id=%s ticket_id=%s max_llm_calls_per_task=%s",
-                    task_id,
-                    ticket_id,
-                    config["max_llm_calls_per_task"],
-                )
+                if config["verbose"]:
+                    LOGGER.info(
+                        "llm_budget_exceeded task_id=%s ticket_id=%s max_llm_calls_per_task=%s",
+                        task_id,
+                        ticket_id,
+                        config["max_llm_calls_per_task"],
+                    )
                 ticket_plans[ticket_id] = _heuristic_plan_from_ticket(ticket)
 
             typed_action = TicketTriageAction(action_type=ActionType.INSPECT_TICKET, ticket_id=ticket_id)
@@ -412,21 +437,23 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
                 typed_action = TicketTriageAction(action_type=ActionType.NOOP)
 
         try:
-            LOGGER.info(
-                "env_request method=POST path=/step task_id=%s step=%s action_type=%s ticket_id=%s",
-                task_id,
-                step_idx + 1,
-                typed_action.action_type.value,
-                typed_action.ticket_id,
-            )
+            if config["verbose"]:
+                LOGGER.info(
+                    "env_request method=POST path=/step task_id=%s step=%s action_type=%s ticket_id=%s",
+                    task_id,
+                    step_idx + 1,
+                    typed_action.action_type.value,
+                    typed_action.ticket_id,
+                )
             result = env_client.step(typed_action)
-            LOGGER.info(
-                "env_response task_id=%s step=%s reward=%.3f done=%s",
-                task_id,
-                step_idx + 1,
-                float(result.get("reward", 0.0)),
-                bool(result.get("done", False)),
-            )
+            if config["verbose"]:
+                LOGGER.info(
+                    "env_response task_id=%s step=%s reward=%.3f done=%s",
+                    task_id,
+                    step_idx + 1,
+                    float(result.get("reward", 0.0)),
+                    bool(result.get("done", False)),
+                )
         except Exception:
             LOGGER.exception(
                 "env_step_failed task_id=%s step=%s action_type=%s",
@@ -437,10 +464,12 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
             result = env_client.step(TicketTriageAction(action_type=ActionType.NOOP))
 
     if not result.get("done"):
-        LOGGER.info("env_request method=POST path=/step task_id=%s action_type=submit_batch", task_id)
+        if config["verbose"]:
+            LOGGER.info("env_request method=POST path=/step task_id=%s action_type=submit_batch", task_id)
         batch_result = env_client.step(TicketTriageAction(action_type=ActionType.SUBMIT_BATCH))
         final_score = float(batch_result.get("info", {}).get("final_score", 0.0))
-        LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
+        if config["verbose"]:
+            LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
 
     return float(final_score)
 
@@ -463,24 +492,35 @@ def check_environment_server(config: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-    )
     load_env_file()
     config = resolve_config()
+
+    default_level = "INFO" if config["verbose"] else "ERROR"
+    handlers: List[logging.Handler] = [logging.StreamHandler()]
+    if config["inference_log_to_file"]:
+        log_path = config["inference_log_file_path"]
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("LOG_LEVEL", default_level).upper(), logging.ERROR),
+        format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
 
     if not config["api_key"]:
         raise RuntimeError("LLM_API_KEY is required (or set OPENAI_API_KEY for backward compatibility)")
 
     client = OpenAI(base_url=config["api_base"], api_key=config["api_key"])
-    LOGGER.info(
-        "inference_start provider=%s model=%s api_base=%s env_base=%s",
-        config["provider"],
-        config["model"],
-        config["api_base"],
-        config["env_base"],
-    )
+    if config["verbose"]:
+        LOGGER.info(
+            "inference_start provider=%s model=%s api_base=%s env_base=%s",
+            config["provider"],
+            config["model"],
+            config["api_base"],
+            config["env_base"],
+        )
     check_environment_server(config)
 
     scores: Dict[str, float] = {}

@@ -30,4 +30,7 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Runtime logs
+logs/
+
 code_review_improvements/
