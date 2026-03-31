@@ -13,10 +13,12 @@ WEIGHTS = {
     "response": 0.15,
 }
 
+MIN_RESPONSE_LENGTH = 50
+
 
 def _response_component(response_text: str | None, answer: Dict[str, object]) -> float:
     text = (response_text or "").strip().lower()
-    if not text:
+    if not text or len(text) < MIN_RESPONSE_LENGTH:
         return 0.0
 
     required_keywords: List[str] = [

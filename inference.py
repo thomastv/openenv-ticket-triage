@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-import random
 from typing import Any, Dict, List
 
 import requests
 from openai import OpenAI
+
+from ticket_triage_env.models import ActionType, TicketTriageAction
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
@@ -54,8 +55,6 @@ def run_task(client: OpenAI, task_id: str) -> float:
     result = reset_response.json()
 
     final_score = 0.0
-    random.seed(SEED)
-
     for _ in range(MAX_STEPS):
         if result.get("done"):
             final_score = float(result.get("info", {}).get("final_score", 0.0))
@@ -63,20 +62,26 @@ def run_task(client: OpenAI, task_id: str) -> float:
 
         observation = result["observation"]
         action = call_model(client, observation)
+        try:
+            safe_action = TicketTriageAction(**action).model_dump(mode="json")
+        except Exception:
+            safe_action = TicketTriageAction(action_type=ActionType.NOOP).model_dump(mode="json")
 
-        step_response = requests.post(f"{ENV_BASE_URL}/step", json=action, timeout=30)
+        step_response = requests.post(f"{ENV_BASE_URL}/step", json=safe_action, timeout=30)
         if step_response.status_code >= 400:
+            noop_action = TicketTriageAction(action_type=ActionType.NOOP).model_dump(mode="json")
             step_response = requests.post(
-                f"{ENV_BASE_URL}/step", json={"action_type": "noop"}, timeout=30
+                f"{ENV_BASE_URL}/step", json=noop_action, timeout=30
             )
         step_response.raise_for_status()
         result = step_response.json()
 
     if not result.get("done"):
-        requests.post(f"{ENV_BASE_URL}/step", json={"action_type": "submit_batch"}, timeout=30)
-        state_response = requests.get(f"{ENV_BASE_URL}/state", timeout=30)
-        state_response.raise_for_status()
-        final_score = 0.0
+        batch_action = TicketTriageAction(action_type=ActionType.SUBMIT_BATCH).model_dump(mode="json")
+        batch_response = requests.post(f"{ENV_BASE_URL}/step", json=batch_action, timeout=30)
+        batch_response.raise_for_status()
+        batch_result = batch_response.json()
+        final_score = float(batch_result.get("info", {}).get("final_score", 0.0))
 
     return float(final_score)
 

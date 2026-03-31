@@ -1,7 +1,8 @@
 name: customer-support-ticket-triage
 description: Deterministic customer support ticket triage environment for agent evaluation
 version: 0.1.0
-author: thoma
+author: Thomas Vempeny
+repository: https://github.com/thomastv/openenv-ticket-triage
 license: MIT
 tags:
   - openenv

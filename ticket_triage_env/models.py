@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TicketCategory(str, Enum):
@@ -77,13 +77,33 @@ class TicketDecision(BaseModel):
 
 
 class TicketTriageAction(BaseModel):
-    action_type: ActionType
-    ticket_id: Optional[str] = None
-    category: Optional[TicketCategory] = None
-    priority: Optional[Priority] = None
-    queue: Optional[Queue] = None
-    next_action: Optional[NextAction] = None
-    response_text: Optional[str] = None
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    action_type: ActionType = Field(description="The action type to perform")
+    ticket_id: Optional[str] = Field(
+        default=None,
+        description="Target ticket ID. Required for most ticket-level actions.",
+    )
+    category: Optional[TicketCategory] = Field(
+        default=None,
+        description="Category classification for the ticket",
+    )
+    priority: Optional[Priority] = Field(
+        default=None,
+        description="Priority assignment for the ticket",
+    )
+    queue: Optional[Queue] = Field(
+        default=None,
+        description="Routing queue assignment",
+    )
+    next_action: Optional[NextAction] = Field(
+        default=None,
+        description="Operational next action recommendation",
+    )
+    response_text: Optional[str] = Field(
+        default=None,
+        description="Draft customer-facing response text",
+    )
 
 
 class QueueSnapshot(BaseModel):

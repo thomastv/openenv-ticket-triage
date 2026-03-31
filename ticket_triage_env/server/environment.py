@@ -147,7 +147,31 @@ class TicketTriageEnvironment:
             raise ValueError(f"Unknown task_id '{task_id}'")
 
         with scenario_file.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+            scenario = json.load(fh)
+
+        self._validate_scenario(scenario)
+        return scenario
+
+    def _validate_scenario(self, scenario: Dict[str, object]) -> None:
+        tickets = scenario.get("tickets", [])
+        answer_key = scenario.get("answer_key", {})
+
+        if not isinstance(tickets, list) or not tickets:
+            raise ValueError("Scenario must contain a non-empty 'tickets' list")
+
+        if not isinstance(answer_key, dict):
+            raise ValueError("Scenario must contain an 'answer_key' object")
+
+        ticket_ids = set()
+        for item in tickets:
+            ticket_id = item.get("ticket_id")
+            if not ticket_id:
+                raise ValueError("Every ticket must include a non-empty 'ticket_id'")
+            ticket_ids.add(ticket_id)
+
+        missing = sorted(ticket_ids - set(answer_key.keys()))
+        if missing:
+            raise ValueError(f"Missing answer_key entries for tickets: {', '.join(missing)}")
 
     def _apply_action(self, action: TicketTriageAction) -> Tuple[bool, str, float, Dict[str, object]]:
         reward = 0.0
@@ -263,18 +287,15 @@ class TicketTriageEnvironment:
         if expected is None:
             return 0.0
 
-        if new_value == expected and previous_value is None:
+        prev_str = None
+        if previous_value is not None:
+            prev_str = previous_value.value if hasattr(previous_value, "value") else str(previous_value)
+
+        if new_value == expected and prev_str is None:
             return 0.05
 
         if new_value == expected:
-            if hasattr(previous_value, "value"):
-                prev = previous_value.value
-            else:
-                prev = str(previous_value)
-            return 0.02 if prev != expected else 0.0
-
-        if previous_value is not None and hasattr(previous_value, "value") and previous_value.value == new_value:
-            return -0.01
+            return 0.02 if prev_str != expected else 0.0
 
         return -0.01
 
