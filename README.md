@@ -100,6 +100,23 @@ LLM_MODEL=gemini-2.5-flash-lite
 # LLM_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 ```
 
+Ollama local example (`llama3.2`):
+
+```bash
+LLM_PROVIDER=ollama
+LLM_API_KEY=ollama
+LLM_MODEL=llama3.2
+LLM_API_BASE_URL=http://localhost:11434/v1
+```
+
+Free-tier quota controls:
+
+```bash
+MAX_LLM_CALLS_PER_TASK=8
+LLM_RETRY_MAX=2
+LLM_RETRY_SECONDS=35
+```
+
 Quick setup:
 
 ```bash
