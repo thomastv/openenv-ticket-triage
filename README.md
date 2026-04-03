@@ -1,3 +1,16 @@
+---
+title: Customer Support Ticket Triage OpenEnv
+emoji: 🚀
+colorFrom: blue
+colorTo: yellow
+sdk: docker
+pinned: false
+app_port: 7860
+base_path: /web
+tags:
+  - openenv
+---
+
 # Customer Support Ticket Triage OpenEnv
 
 A production-oriented OpenEnv-style environment for evaluating tool-using agents on customer support ticket triage.
@@ -73,6 +86,19 @@ uvicorn ticket_triage_env.server.app:app --host 0.0.0.0 --port 8000
 ```bash
 docker build -t ticket-triage-env:latest .
 docker run --rm -p 8000:8000 ticket-triage-env:latest
+```
+
+## Hugging Face Space
+
+Live Space:
+
+https://huggingface.co/spaces/thomastv/openenv-customer-ticket-triage
+
+Space endpoint checks:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" https://thomastv-openenv-customer-ticket-triage.hf.space/health
+curl -X POST https://thomastv-openenv-customer-ticket-triage.hf.space/reset -H "Content-Type: application/json" -d '{}'
 ```
 
 ## Baseline Inference

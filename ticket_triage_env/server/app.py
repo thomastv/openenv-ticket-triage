@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -53,6 +54,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/")
+    def root() -> RedirectResponse:
+        return RedirectResponse(url="/docs", status_code=307)
+
+    @app.get("/web")
+    def web() -> RedirectResponse:
+        # Hugging Face Spaces may probe /web when frontmatter has base_path: /web.
+        return RedirectResponse(url="/docs", status_code=307)
 
     @app.post("/reset")
     def reset(payload: ResetRequest | None = None) -> dict:
