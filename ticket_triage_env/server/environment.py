@@ -167,6 +167,8 @@ class TicketTriageEnvironment:
             ticket_id = item.get("ticket_id")
             if not ticket_id:
                 raise ValueError("Every ticket must include a non-empty 'ticket_id'")
+            if ticket_id in ticket_ids:
+                raise ValueError(f"Duplicate ticket_id in scenario: {ticket_id}")
             ticket_ids.add(ticket_id)
 
         missing = sorted(ticket_ids - set(answer_key.keys()))

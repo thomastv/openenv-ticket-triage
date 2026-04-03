@@ -13,7 +13,17 @@ from openai import OpenAI, RateLimitError
 from ticket_triage_env.client import TicketTriageEnvClient
 from ticket_triage_env.models import ActionType, TicketTriageAction
 
-TASKS = ["easy", "medium", "hard"]
+DEFAULT_TASK_NAME = "easy"
+DEFAULT_BENCHMARK = "ticket_triage"
+DEFAULT_ENV_BASE_URL = "http://localhost:8000"
+DEFAULT_MAX_STEPS = 70
+DEFAULT_TEMPERATURE = 0.0
+DEFAULT_SEED = 42
+DEFAULT_RETRY_MAX = 2
+DEFAULT_RETRY_SECONDS = 35.0
+DEFAULT_MAX_LLM_CALLS_PER_TASK = 8
+DEFAULT_INFERENCE_LOG_TO_FILE = False
+DEFAULT_INFERENCE_LOG_FILE_PATH = "logs/inference.log"
 
 SYSTEM_PROMPT = """You are a support triage agent. Return JSON only with keys:
 action_type, ticket_id, category, priority, queue, next_action, response_text.
@@ -152,45 +162,55 @@ def load_env_file(env_path: str = ".env") -> None:
 
 
 def resolve_config() -> Dict[str, Any]:
+    model = (os.getenv("MODEL_NAME") or os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-72B-Instruct").strip()
+    api_key = (os.getenv("HF_TOKEN") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    local_image_name = os.getenv("LOCAL_IMAGE_NAME", "").strip()
+
+    missing: List[str] = []
+    if not api_key:
+        missing.append("HF_TOKEN (or LLM_API_KEY / OPENAI_API_KEY)")
+
+    if missing:
+        raise RuntimeError(f"Missing required environment variable(s): {', '.join(missing)}")
+
     provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-    model = os.getenv("LLM_MODEL") or os.getenv("MODEL_NAME") or "gpt-4o-mini"
-    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
 
     if provider == "gemini":
         default_api_base = "https://generativelanguage.googleapis.com/v1beta/openai"
     elif provider == "ollama":
         default_api_base = "http://localhost:11434/v1"
     else:
-        default_api_base = "https://api.openai.com/v1"
+        default_api_base = "https://router.huggingface.co/v1"
 
-    api_base = os.getenv("LLM_API_BASE_URL") or os.getenv("API_BASE_URL") or default_api_base
-    env_base = os.getenv("ENV_BASE_URL", "http://localhost:8000")
-    max_steps = int(os.getenv("MAX_STEPS", "70"))
-    temperature = float(os.getenv("TEMPERATURE", "0.0"))
-    seed = int(os.getenv("SEED", "42"))
+    # Explicit override wins, then primary API_BASE_URL, then provider-derived default.
+    api_base = (
+        (os.getenv("LLM_API_BASE_URL") or "").strip()
+        or (os.getenv("API_BASE_URL") or "").strip()
+        or default_api_base
+    )
 
-    retry_max = int(os.getenv("LLM_RETRY_MAX", "2"))
-    retry_seconds = float(os.getenv("LLM_RETRY_SECONDS", "35"))
-    max_llm_calls_per_task = int(os.getenv("MAX_LLM_CALLS_PER_TASK", "8"))
+    env_base = os.getenv("ENV_BASE_URL") or DEFAULT_ENV_BASE_URL
+    task_name = os.getenv("TASK_NAME") or DEFAULT_TASK_NAME
+    benchmark = os.getenv("BENCHMARK") or DEFAULT_BENCHMARK
+    max_steps = DEFAULT_MAX_STEPS
+    temperature = DEFAULT_TEMPERATURE
+    seed = DEFAULT_SEED
+    retry_max = DEFAULT_RETRY_MAX
+    retry_seconds = DEFAULT_RETRY_SECONDS
+    max_llm_calls_per_task = DEFAULT_MAX_LLM_CALLS_PER_TASK
     verbose = os.getenv("INFERENCE_VERBOSE", "0").strip().lower() in {"1", "true", "yes", "on"}
-    inference_log_to_file = os.getenv("INFERENCE_LOG_TO_FILE", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    inference_log_file_path = os.getenv("INFERENCE_LOG_FILE_PATH", "logs/inference.log")
-
-    if provider == "ollama" and not api_key:
-        # OpenAI-compatible Ollama endpoints typically accept any non-empty key.
-        api_key = "ollama"
+    inference_log_to_file = DEFAULT_INFERENCE_LOG_TO_FILE
+    inference_log_file_path = DEFAULT_INFERENCE_LOG_FILE_PATH
 
     return {
         "provider": provider,
         "model": model,
         "api_key": api_key,
         "api_base": api_base,
+        "local_image_name": local_image_name,
         "env_base": env_base,
+        "task_name": task_name,
+        "benchmark": benchmark,
         "max_steps": max_steps,
         "temperature": temperature,
         "seed": seed,
@@ -201,6 +221,27 @@ def resolve_config() -> Dict[str, Any]:
         "inference_log_to_file": inference_log_to_file,
         "inference_log_file_path": inference_log_file_path,
     }
+
+
+def _bool_text(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def log_start(task_name: str, benchmark: str, model_name: str) -> None:
+    print(f"[START] task={task_name} env={benchmark} model={model_name}", flush=True)
+
+
+def log_step(step: int, action: str, reward: float, done: bool, error: str | None) -> None:
+    error_value = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={_bool_text(done)} error={error_value}",
+        flush=True,
+    )
+
+
+def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+    rewards_text = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}", flush=True)
 
 
 def _extract_retry_seconds(exc: Exception, default_wait: float) -> float:
@@ -315,7 +356,10 @@ def call_model_for_ticket(
                     str(exc),
                     content[:200],
                 )
-                break
+                if attempt >= config["retry_max"]:
+                    break
+                time.sleep(config["retry_seconds"])
+                continue
             raw_plan = {
                 "category": parsed.get("category"),
                 "priority": parsed.get("priority"),
@@ -366,112 +410,161 @@ def call_model_for_ticket(
 
 def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
     env_client = TicketTriageEnvClient(base_url=config["env_base"])
+    log_start(task_name=task_id, benchmark=config["benchmark"], model_name=config["model"])
+
     if config["verbose"]:
         LOGGER.info("env_request method=POST path=/reset task_id=%s", task_id)
-    result = env_client.reset(task_id=task_id)
-
-    ticket_plans: Dict[str, Dict[str, Any]] = {}
-    llm_calls = 0
+    rewards: List[float] = []
+    steps_taken = 0
     final_score = 0.0
-    for step_idx in range(config["max_steps"]):
-        if result.get("done"):
-            final_score = float(result.get("info", {}).get("final_score", 0.0))
-            if config["verbose"]:
-                LOGGER.info("task_done task_id=%s step=%s final_score=%.3f", task_id, step_idx, final_score)
-            break
+    success = False
 
-        observation = result["observation"]
-        ticket = observation.get("ticket_view", {}).get("ticket") or {}
-        decision = observation.get("ticket_view", {}).get("decision") or {}
-        ticket_id = ticket.get("ticket_id")
+    try:
+        result = env_client.reset(task_id=task_id)
 
-        if not ticket_id:
-            typed_action = TicketTriageAction(action_type=ActionType.SUBMIT_BATCH)
-        elif ticket_id not in ticket_plans:
-            if llm_calls < config["max_llm_calls_per_task"]:
-                ticket_plans[ticket_id] = call_model_for_ticket(client, ticket, config)
-                llm_calls += 1
+        ticket_plans: Dict[str, Dict[str, Any]] = {}
+        llm_calls = 0
+        for step_idx in range(config["max_steps"]):
+            if result.get("done"):
+                final_score = float(result.get("info", {}).get("final_score", 0.0))
+                if config["verbose"]:
+                    LOGGER.info("task_done task_id=%s step=%s final_score=%.3f", task_id, step_idx, final_score)
+                break
+
+            observation = result["observation"]
+            ticket = observation.get("ticket_view", {}).get("ticket") or {}
+            decision = observation.get("ticket_view", {}).get("decision") or {}
+            ticket_id = ticket.get("ticket_id")
+
+            if not ticket_id:
+                typed_action = TicketTriageAction(action_type=ActionType.SUBMIT_BATCH)
+            elif ticket_id not in ticket_plans:
+                if llm_calls < config["max_llm_calls_per_task"]:
+                    ticket_plans[ticket_id] = call_model_for_ticket(client, ticket, config)
+                    llm_calls += 1
+                else:
+                    if config["verbose"]:
+                        LOGGER.info(
+                            "llm_budget_exceeded task_id=%s ticket_id=%s max_llm_calls_per_task=%s",
+                            task_id,
+                            ticket_id,
+                            config["max_llm_calls_per_task"],
+                        )
+                    ticket_plans[ticket_id] = _heuristic_plan_from_ticket(ticket)
+
+                typed_action = TicketTriageAction(action_type=ActionType.INSPECT_TICKET, ticket_id=ticket_id)
             else:
+                plan = ticket_plans[ticket_id]
+                if not decision.get("category"):
+                    try:
+                        typed_action = TicketTriageAction(
+                            action_type=ActionType.SET_FIELDS,
+                            ticket_id=ticket_id,
+                            category=plan.get("category"),
+                            priority=plan.get("priority"),
+                            queue=plan.get("queue"),
+                            next_action=plan.get("next_action"),
+                        )
+                    except Exception:
+                        LOGGER.exception("set_fields_plan_invalid ticket_id=%s plan=%s", ticket_id, plan)
+                        fallback_plan = _heuristic_plan_from_ticket(ticket)
+                        typed_action = TicketTriageAction(
+                            action_type=ActionType.SET_FIELDS,
+                            ticket_id=ticket_id,
+                            category=fallback_plan.get("category"),
+                            priority=fallback_plan.get("priority"),
+                            queue=fallback_plan.get("queue"),
+                            next_action=fallback_plan.get("next_action"),
+                        )
+                elif not decision.get("response_text"):
+                    typed_action = TicketTriageAction(
+                        action_type=ActionType.DRAFT_RESPONSE,
+                        ticket_id=ticket_id,
+                        response_text=plan.get("response_text"),
+                    )
+                elif decision.get("status") != "submitted":
+                    typed_action = TicketTriageAction(action_type=ActionType.SUBMIT_TICKET, ticket_id=ticket_id)
+                else:
+                    typed_action = TicketTriageAction(action_type=ActionType.NOOP)
+
+            step_error: str | None = None
+            try:
                 if config["verbose"]:
                     LOGGER.info(
-                        "llm_budget_exceeded task_id=%s ticket_id=%s max_llm_calls_per_task=%s",
+                        "env_request method=POST path=/step task_id=%s step=%s action_type=%s ticket_id=%s",
                         task_id,
-                        ticket_id,
-                        config["max_llm_calls_per_task"],
+                        step_idx + 1,
+                        typed_action.action_type.value,
+                        typed_action.ticket_id,
                     )
-                ticket_plans[ticket_id] = _heuristic_plan_from_ticket(ticket)
-
-            typed_action = TicketTriageAction(action_type=ActionType.INSPECT_TICKET, ticket_id=ticket_id)
-        else:
-            plan = ticket_plans[ticket_id]
-            if not decision.get("category"):
-                try:
-                    typed_action = TicketTriageAction(
-                        action_type=ActionType.SET_FIELDS,
-                        ticket_id=ticket_id,
-                        category=plan.get("category"),
-                        priority=plan.get("priority"),
-                        queue=plan.get("queue"),
-                        next_action=plan.get("next_action"),
-                    )
-                except Exception:
-                    LOGGER.exception("set_fields_plan_invalid ticket_id=%s plan=%s", ticket_id, plan)
-                    fallback_plan = _heuristic_plan_from_ticket(ticket)
-                    typed_action = TicketTriageAction(
-                        action_type=ActionType.SET_FIELDS,
-                        ticket_id=ticket_id,
-                        category=fallback_plan.get("category"),
-                        priority=fallback_plan.get("priority"),
-                        queue=fallback_plan.get("queue"),
-                        next_action=fallback_plan.get("next_action"),
-                    )
-            elif not decision.get("response_text"):
-                typed_action = TicketTriageAction(
-                    action_type=ActionType.DRAFT_RESPONSE,
-                    ticket_id=ticket_id,
-                    response_text=plan.get("response_text"),
-                )
-            elif decision.get("status") != "submitted":
-                typed_action = TicketTriageAction(action_type=ActionType.SUBMIT_TICKET, ticket_id=ticket_id)
-            else:
-                typed_action = TicketTriageAction(action_type=ActionType.NOOP)
-
-        try:
-            if config["verbose"]:
-                LOGGER.info(
-                    "env_request method=POST path=/step task_id=%s step=%s action_type=%s ticket_id=%s",
+                result = env_client.step(typed_action)
+            except Exception as exc:
+                LOGGER.exception(
+                    "env_step_failed task_id=%s step=%s action_type=%s",
                     task_id,
                     step_idx + 1,
                     typed_action.action_type.value,
-                    typed_action.ticket_id,
                 )
-            result = env_client.step(typed_action)
+                result = env_client.step(TicketTriageAction(action_type=ActionType.NOOP))
+                step_error = str(exc)
+
+            reward = float(result.get("reward", 0.0))
+            done = bool(result.get("done", False))
+            rewards.append(reward)
+            steps_taken = step_idx + 1
+
+            if step_error is None:
+                step_error = result.get("observation", {}).get("last_action_error")
+
+            action_repr = typed_action.action_type.value
+            if typed_action.ticket_id:
+                action_repr = f"{action_repr}:{typed_action.ticket_id}"
+            log_step(
+                step=steps_taken,
+                action=action_repr,
+                reward=reward,
+                done=done,
+                error=step_error,
+            )
+
             if config["verbose"]:
                 LOGGER.info(
                     "env_response task_id=%s step=%s reward=%.3f done=%s",
                     task_id,
-                    step_idx + 1,
-                    float(result.get("reward", 0.0)),
-                    bool(result.get("done", False)),
+                    steps_taken,
+                    reward,
+                    done,
                 )
-        except Exception:
-            LOGGER.exception(
-                "env_step_failed task_id=%s step=%s action_type=%s",
-                task_id,
-                step_idx + 1,
-                typed_action.action_type.value,
+
+            if done:
+                final_score = float(result.get("info", {}).get("final_score", 0.0))
+                break
+
+        if not result.get("done"):
+            if config["verbose"]:
+                LOGGER.info("env_request method=POST path=/step task_id=%s action_type=submit_batch", task_id)
+            batch_result = env_client.step(TicketTriageAction(action_type=ActionType.SUBMIT_BATCH))
+            final_score = float(batch_result.get("info", {}).get("final_score", 0.0))
+            forced_reward = float(batch_result.get("reward", 0.0))
+            rewards.append(forced_reward)
+            steps_taken += 1
+            forced_done = bool(batch_result.get("done", False))
+            log_step(
+                step=steps_taken,
+                action=ActionType.SUBMIT_BATCH.value,
+                reward=forced_reward,
+                done=forced_done,
+                error=None,
             )
-            result = env_client.step(TicketTriageAction(action_type=ActionType.NOOP))
+            if config["verbose"]:
+                LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
 
-    if not result.get("done"):
-        if config["verbose"]:
-            LOGGER.info("env_request method=POST path=/step task_id=%s action_type=submit_batch", task_id)
-        batch_result = env_client.step(TicketTriageAction(action_type=ActionType.SUBMIT_BATCH))
-        final_score = float(batch_result.get("info", {}).get("final_score", 0.0))
-        if config["verbose"]:
-            LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
-
-    return float(final_score)
+        success_threshold = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
+        success = final_score >= success_threshold
+        return float(final_score)
+    finally:
+        env_client.close()
+        log_end(success=success, steps=steps_taken, rewards=rewards)
 
 
 def check_environment_server(config: Dict[str, Any]) -> None:
@@ -508,9 +601,8 @@ def main() -> None:
         handlers=handlers,
         force=True,
     )
-
-    if not config["api_key"]:
-        raise RuntimeError("LLM_API_KEY is required (or set OPENAI_API_KEY for backward compatibility)")
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("openai").setLevel(logging.ERROR)
 
     client = OpenAI(base_url=config["api_base"], api_key=config["api_key"])
     if config["verbose"]:
@@ -523,22 +615,7 @@ def main() -> None:
         )
     check_environment_server(config)
 
-    scores: Dict[str, float] = {}
-    for task in TASKS:
-        scores[task] = run_task(client, task, config)
-
-    overall = sum(scores.values()) / len(scores)
-    print("Baseline Scores")
-    print("==============")
-    for task in TASKS:
-        print(f"{task:>6}: {scores[task]:.3f}")
-    print(f"overall: {overall:.3f}")
-    print(
-        "metadata: "
-        f"provider={config['provider']}, model={config['model']}, api_base={config['api_base']}, "
-        f"seed={config['seed']}, temp={config['temperature']}, env={config['env_base']}, "
-        f"max_llm_calls_per_task={config['max_llm_calls_per_task']}"
-    )
+    run_task(client, config["task_name"], config)
 
 
 if __name__ == "__main__":

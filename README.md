@@ -104,16 +104,14 @@ curl -X POST https://thomastv-openenv-customer-ticket-triage.hf.space/reset -H "
 ## Baseline Inference
 
 Set env vars (recommended via `.env.example`):
-- `LLM_PROVIDER` (recommended: `gemini` or `openai`)
-- `LLM_API_KEY` (required)
-- `LLM_MODEL` (recommended)
-- `LLM_API_BASE_URL` (optional)
-- Backward compatibility: `OPENAI_API_KEY`, `MODEL_NAME`, `API_BASE_URL`
-- `HF_TOKEN` (optional fallback token)
-- `ENV_BASE_URL` (optional)
-- `MAX_STEPS` (optional)
-- `TEMPERATURE` (optional)
-- `SEED` (optional)
+- `API_BASE_URL` (recommended; provider default is used if unset)
+- `MODEL_NAME` (required for deterministic model selection)
+- `HF_TOKEN` (required; aliases: `LLM_API_KEY`, `OPENAI_API_KEY`)
+- `LOCAL_IMAGE_NAME` (required only for implementations using `from_docker_image()`)
+- `LLM_PROVIDER` (optional: `openai`, `gemini`, `ollama`)
+- `LLM_API_BASE_URL` (optional override; highest precedence)
+- `TASK_NAME` (optional; default `easy`)
+- `BENCHMARK` (optional; default `ticket_triage`)
 - `LOG_LEVEL` (optional server logging level)
 - `LOG_TO_FILE` and `LOG_FILE_PATH` (optional server file logging)
 - `INFERENCE_VERBOSE` (optional inference verbosity)
@@ -123,19 +121,19 @@ Gemini example (OpenAI-compatible endpoint):
 
 ```bash
 LLM_PROVIDER=gemini
-LLM_API_KEY=your_gemini_api_key
-LLM_MODEL=gemini-2.5-flash-lite
-# Optional, auto-selected when provider=gemini:
-# LLM_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+HF_TOKEN=your_hf_token
+MODEL_NAME=google/gemini-2.5-flash
+# Optional; auto-selected when provider=gemini and API_BASE_URL is unset:
+# API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 ```
 
 Ollama local example (`llama3.2`):
 
 ```bash
 LLM_PROVIDER=ollama
-LLM_API_KEY=ollama
-LLM_MODEL=llama3.2
-LLM_API_BASE_URL=http://localhost:11434/v1
+HF_TOKEN=ollama
+MODEL_NAME=llama3.2
+API_BASE_URL=http://localhost:11434/v1
 ```
 
 Free-tier quota controls:

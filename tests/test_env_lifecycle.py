@@ -7,6 +7,7 @@ from ticket_triage_env.models import (
     TicketTriageAction,
 )
 from ticket_triage_env.server.environment import TicketTriageEnvironment
+import pytest
 
 
 def test_reset_step_state_lifecycle() -> None:
@@ -97,3 +98,46 @@ def test_full_episode_easy_reaches_done_with_good_score() -> None:
     assert terminal_result is not None
     assert terminal_result["done"] is True
     assert terminal_result["info"]["final_score"] >= 0.85
+
+
+def test_duplicate_ticket_id_in_scenario_rejected(tmp_path) -> None:
+    scenario = {
+        "task_id": "easy",
+        "max_steps": 5,
+        "tickets": [
+            {
+                "ticket_id": "DUP-1",
+                "subject": "A",
+                "body": "B",
+                "customer_tier": "free",
+                "product_area": "core",
+                "sentiment": "neutral",
+                "sla_hours_remaining": 10,
+            },
+            {
+                "ticket_id": "DUP-1",
+                "subject": "C",
+                "body": "D",
+                "customer_tier": "free",
+                "product_area": "core",
+                "sentiment": "neutral",
+                "sla_hours_remaining": 10,
+            },
+        ],
+        "answer_key": {
+            "DUP-1": {
+                "category": "other",
+                "priority": "low",
+                "queue": "csm",
+                "next_action": "request_info",
+                "response_required_keywords": [],
+                "response_prohibited_phrases": [],
+                "response_max_chars": 500,
+            }
+        },
+    }
+    (tmp_path / "easy.json").write_text(__import__("json").dumps(scenario), encoding="utf-8")
+
+    env = TicketTriageEnvironment(scenarios_dir=tmp_path)
+    with pytest.raises(ValueError, match="Duplicate ticket_id"):
+        env.reset("easy")
