@@ -17,4 +17,4 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD python -c "import os, requests; requests.get(f'http://localhost:{os.getenv(\"PORT\", \"7860\")}/health', timeout=2).raise_for_status()"
 
-CMD ["sh", "-c", "uvicorn ticket_triage_env.server.app:app --host 0.0.0.0 --port ${PORT:-7860}"]
+CMD ["sh", "-c", "uvicorn server.app:app --host 0.0.0.0 --port ${PORT:-7860}"]

@@ -20,7 +20,7 @@ tasks:
     name: Hard Batch Triage
     difficulty: hard
 entrypoints:
-  app: ticket_triage_env.server.app:app
+  app: server.app:app
 interfaces:
   - reset
   - step
