@@ -1,16 +1,3 @@
----
-title: Customer Support Ticket Triage OpenEnv
-emoji: 🚀
-colorFrom: blue
-colorTo: yellow
-sdk: docker
-pinned: false
-app_port: 7860
-base_path: /web
-tags:
-  - openenv
----
-
 # Customer Support Ticket Triage OpenEnv
 
 A production-oriented OpenEnv-style environment for evaluating tool-using agents on customer support ticket triage.
@@ -178,9 +165,7 @@ pytest -q
 
 ## Baseline Scores
 
-Fill after first reproducible run:
-
-- easy: TBD
-- medium: TBD
-- hard: TBD
-- overall: TBD
+- easy: 0.850
+- medium: 0.855
+- hard: 0.623
+- overall: 0.776

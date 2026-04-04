@@ -14,6 +14,7 @@ from ticket_triage_env.client import TicketTriageEnvClient
 from ticket_triage_env.models import ActionType, TicketTriageAction
 
 DEFAULT_TASK_NAME = "easy"
+DEFAULT_BASELINE_TASKS = ["easy", "medium", "hard"]
 DEFAULT_BENCHMARK = "ticket_triage"
 DEFAULT_ENV_BASE_URL = "http://localhost:8000"
 DEFAULT_MAX_STEPS = 70
@@ -191,6 +192,9 @@ def resolve_config() -> Dict[str, Any]:
 
     env_base = os.getenv("ENV_BASE_URL") or DEFAULT_ENV_BASE_URL
     task_name = os.getenv("TASK_NAME") or DEFAULT_TASK_NAME
+    tasks_csv = (os.getenv("TASKS") or ",".join(DEFAULT_BASELINE_TASKS)).strip()
+    tasks = [item.strip() for item in tasks_csv.split(",") if item.strip()]
+    run_all_tasks = os.getenv("RUN_ALL_TASKS", "1").strip().lower() in {"1", "true", "yes", "on"}
     benchmark = os.getenv("BENCHMARK") or DEFAULT_BENCHMARK
     max_steps = DEFAULT_MAX_STEPS
     temperature = DEFAULT_TEMPERATURE
@@ -210,6 +214,8 @@ def resolve_config() -> Dict[str, Any]:
         "local_image_name": local_image_name,
         "env_base": env_base,
         "task_name": task_name,
+        "tasks": tasks,
+        "run_all_tasks": run_all_tasks,
         "benchmark": benchmark,
         "max_steps": max_steps,
         "temperature": temperature,
@@ -242,6 +248,18 @@ def log_step(step: int, action: str, reward: float, done: bool, error: str | Non
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     rewards_text = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}", flush=True)
+
+
+def log_baseline(scores: Dict[str, float], seed: int, temperature: float) -> None:
+    ordered_tasks = [task for task in DEFAULT_BASELINE_TASKS if task in scores]
+    extras = sorted(task for task in scores.keys() if task not in ordered_tasks)
+    ordered_tasks.extend(extras)
+    overall = sum(scores.values()) / len(scores) if scores else 0.0
+    parts = [f"{task}={scores[task]:.3f}" for task in ordered_tasks]
+    parts.append(f"overall={overall:.3f}")
+    parts.append(f"seed={seed}")
+    parts.append(f"temp={temperature:.1f}")
+    print(f"[BASELINE] {' '.join(parts)}", flush=True)
 
 
 def _extract_retry_seconds(exc: Exception, default_wait: float) -> float:
@@ -614,8 +632,13 @@ def main() -> None:
             config["env_base"],
         )
     check_environment_server(config)
-
-    run_task(client, config["task_name"], config)
+    if config["run_all_tasks"]:
+        baseline_scores: Dict[str, float] = {}
+        for task in config["tasks"]:
+            baseline_scores[task] = run_task(client, task, config)
+        log_baseline(baseline_scores, seed=config["seed"], temperature=config["temperature"])
+    else:
+        run_task(client, config["task_name"], config)
 
 
 if __name__ == "__main__":
