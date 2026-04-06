@@ -1,3 +1,16 @@
+---
+title: Customer Support Ticket Triage OpenEnv
+emoji: 🚀
+colorFrom: blue
+colorTo: yellow
+sdk: docker
+pinned: false
+app_port: 7860
+base_path: /web
+tags:
+  - openenv
+---
+
 # Customer Support Ticket Triage OpenEnv
 
 A production-oriented OpenEnv-style environment for evaluating tool-using agents on customer support ticket triage.
