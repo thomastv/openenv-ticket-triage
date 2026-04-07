@@ -22,6 +22,17 @@ from ticket_triage_env.models import (
 )
 
 
+STRICT_SCORE_EPSILON = 1e-6
+
+
+def _strict_unit_interval(value: float) -> float:
+    if value <= 0.0:
+        return STRICT_SCORE_EPSILON
+    if value >= 1.0:
+        return 1.0 - STRICT_SCORE_EPSILON
+    return value
+
+
 class TicketTriageEnvironment:
     def __init__(self, scenarios_dir: Optional[Path] = None):
         base_dir = Path(__file__).resolve().parent.parent
@@ -310,6 +321,7 @@ class TicketTriageEnvironment:
             decision = self._decisions[ticket_id]
             answer = self._answer_key[ticket_id]
             item_score = score_ticket(decision, answer)
+            item_score["total"] = _strict_unit_interval(float(item_score.get("total", 0.0)))
             breakdown[ticket_id] = item_score
             scores.append(item_score)
 

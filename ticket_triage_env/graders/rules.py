@@ -14,6 +14,15 @@ WEIGHTS = {
 }
 
 MIN_RESPONSE_LENGTH = 50
+STRICT_SCORE_EPSILON = 1e-6
+
+
+def _strict_unit_interval(value: float) -> float:
+    if value <= 0.0:
+        return STRICT_SCORE_EPSILON
+    if value >= 1.0:
+        return 1.0 - STRICT_SCORE_EPSILON
+    return value
 
 
 def _response_component(response_text: str | None, answer: Dict[str, object]) -> float:
@@ -77,10 +86,10 @@ def score_ticket(decision: TicketDecision, answer: Dict[str, object]) -> Dict[st
     )
 
     return {
-        "category": category_score,
-        "priority": priority_score,
-        "queue": queue_score,
-        "next_action": next_action_score,
-        "response": response_score,
-        "total": total,
+        "category": _strict_unit_interval(category_score),
+        "priority": _strict_unit_interval(priority_score),
+        "queue": _strict_unit_interval(queue_score),
+        "next_action": _strict_unit_interval(next_action_score),
+        "response": _strict_unit_interval(response_score),
+        "total": _strict_unit_interval(total),
     }

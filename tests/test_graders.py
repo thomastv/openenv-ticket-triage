@@ -27,7 +27,7 @@ def test_score_ticket_range() -> None:
     }
 
     result = score_ticket(decision, answer)
-    assert 0.0 <= result["total"] <= 1.0
+    assert 0.0 < result["total"] < 1.0
 
 
 def test_score_batch_bounds() -> None:
@@ -75,7 +75,7 @@ def test_score_ticket_empty_decision_is_zero() -> None:
         "response_max_chars": 500,
     }
     result = score_ticket(decision, answer)
-    assert result["total"] == 0.0
+    assert 0.0 < result["total"] < 1.0
 
 
 def test_score_ticket_near_perfect_with_strong_response() -> None:
@@ -100,3 +100,4 @@ def test_score_ticket_near_perfect_with_strong_response() -> None:
     }
     result = score_ticket(decision, answer)
     assert result["total"] >= 0.95
+    assert result["total"] < 1.0
