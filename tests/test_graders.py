@@ -32,7 +32,12 @@ def test_score_ticket_range() -> None:
 
 def test_score_batch_bounds() -> None:
     score = score_batch([{"total": 0.9}, {"total": 0.8}], unresolved_urgent_count=1)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
+
+
+def test_score_batch_is_strictly_inside_unit_interval_at_edges() -> None:
+    assert 0.0 < score_batch([{"total": 0.0}], unresolved_urgent_count=0) < 1.0
+    assert 0.0 < score_batch([{"total": 1.0}], unresolved_urgent_count=0) < 1.0
 
 
 def test_score_ticket_deterministic() -> None:

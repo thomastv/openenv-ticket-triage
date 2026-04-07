@@ -17,6 +17,7 @@ DEFAULT_TASK_NAME = "easy"
 DEFAULT_BASELINE_TASKS = ["easy", "medium", "hard"]
 DEFAULT_BENCHMARK = "ticket_triage"
 DEFAULT_ENV_BASE_URL = "http://localhost:8000"
+DEFAULT_HF_SPACE_BASE_URL = "https://thomastv-openenv-customer-ticket-triage.hf.space"
 DEFAULT_MAX_STEPS = 70
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_SEED = 42
@@ -25,6 +26,46 @@ DEFAULT_RETRY_SECONDS = 35.0
 DEFAULT_MAX_LLM_CALLS_PER_TASK = 8
 DEFAULT_INFERENCE_LOG_TO_FILE = False
 DEFAULT_INFERENCE_LOG_FILE_PATH = "logs/inference.log"
+STRICT_SCORE_EPSILON = 1e-6
+
+
+def _first_non_empty(*values: str | None) -> str:
+    for value in values:
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
+def _parse_csv_env(value: str) -> List[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _normalize_space_url(base_url: str) -> str:
+    base = base_url.strip().rstrip("/")
+    if "huggingface.co/spaces/" in base:
+        parts = base.split("huggingface.co/spaces/", 1)[1].split("/")
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            return f"https://{parts[0]}-{parts[1]}.hf.space"
+    return base
+
+
+def _parse_bool_env(*names: str, default: bool = False) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None:
+            continue
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _strict_unit_interval(value: float) -> float:
+    if value <= 0.0:
+        return STRICT_SCORE_EPSILON
+    if value >= 1.0:
+        return 1.0 - STRICT_SCORE_EPSILON
+    return value
 
 SYSTEM_PROMPT = """You are a support triage agent. Return JSON only with keys:
 action_type, ticket_id, category, priority, queue, next_action, response_text.
@@ -163,9 +204,19 @@ def load_env_file(env_path: str = ".env") -> None:
 
 
 def resolve_config() -> Dict[str, Any]:
-    model = (os.getenv("MODEL_NAME") or os.getenv("LLM_MODEL") or "Qwen/Qwen2.5-72B-Instruct").strip()
-    api_key = (os.getenv("HF_TOKEN") or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
-    local_image_name = os.getenv("LOCAL_IMAGE_NAME", "").strip()
+    model = _first_non_empty(
+        os.getenv("MODEL_NAME"),
+        os.getenv("LLM_MODEL"),
+        os.getenv("OPENAI_MODEL"),
+        "Qwen/Qwen2.5-72B-Instruct",
+    )
+    api_key = _first_non_empty(
+        os.getenv("HF_TOKEN"),
+        os.getenv("API_KEY"),
+        os.getenv("LLM_API_KEY"),
+        os.getenv("OPENAI_API_KEY"),
+    )
+    local_image_name = _first_non_empty(os.getenv("LOCAL_IMAGE_NAME"), os.getenv("IMAGE_NAME"))
 
     missing: List[str] = []
     if not api_key:
@@ -174,7 +225,7 @@ def resolve_config() -> Dict[str, Any]:
     if missing:
         raise RuntimeError(f"Missing required environment variable(s): {', '.join(missing)}")
 
-    provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    provider = _first_non_empty(os.getenv("LLM_PROVIDER"), "openai").lower()
 
     if provider == "gemini":
         default_api_base = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -184,25 +235,33 @@ def resolve_config() -> Dict[str, Any]:
         default_api_base = "https://router.huggingface.co/v1"
 
     # Explicit override wins, then primary API_BASE_URL, then provider-derived default.
-    api_base = (
-        (os.getenv("LLM_API_BASE_URL") or "").strip()
-        or (os.getenv("API_BASE_URL") or "").strip()
-        or default_api_base
+    api_base = _first_non_empty(
+        os.getenv("LLM_API_BASE_URL"),
+        os.getenv("API_BASE_URL"),
+        os.getenv("OPENAI_BASE_URL"),
+        default_api_base,
     )
 
-    env_base = os.getenv("ENV_BASE_URL") or DEFAULT_ENV_BASE_URL
-    task_name = os.getenv("TASK_NAME") or DEFAULT_TASK_NAME
+    env_base = _first_non_empty(os.getenv("ENV_BASE_URL"), os.getenv("OPENENV_ENV_BASE_URL"), DEFAULT_ENV_BASE_URL)
+    hf_space_url = _normalize_space_url(
+        _first_non_empty(os.getenv("HF_SPACE_URL"), DEFAULT_HF_SPACE_BASE_URL)
+    )
+    env_base_fallbacks = _parse_csv_env(_first_non_empty(os.getenv("ENV_BASE_URL_FALLBACKS"), ""))
+    if hf_space_url and hf_space_url not in env_base_fallbacks and hf_space_url != env_base:
+        env_base_fallbacks.append(hf_space_url)
+
+    task_name = _first_non_empty(os.getenv("TASK_NAME"), os.getenv("OPENENV_TASK"), DEFAULT_TASK_NAME)
     tasks_csv = (os.getenv("TASKS") or ",".join(DEFAULT_BASELINE_TASKS)).strip()
     tasks = [item.strip() for item in tasks_csv.split(",") if item.strip()]
-    run_all_tasks = os.getenv("RUN_ALL_TASKS", "1").strip().lower() in {"1", "true", "yes", "on"}
-    benchmark = os.getenv("BENCHMARK") or DEFAULT_BENCHMARK
+    run_all_tasks = _parse_bool_env("RUN_ALL_TASKS", default=True)
+    benchmark = _first_non_empty(os.getenv("BENCHMARK"), os.getenv("OPENENV_BENCHMARK"), DEFAULT_BENCHMARK)
     max_steps = DEFAULT_MAX_STEPS
     temperature = DEFAULT_TEMPERATURE
     seed = DEFAULT_SEED
     retry_max = DEFAULT_RETRY_MAX
     retry_seconds = DEFAULT_RETRY_SECONDS
     max_llm_calls_per_task = DEFAULT_MAX_LLM_CALLS_PER_TASK
-    verbose = os.getenv("INFERENCE_VERBOSE", "0").strip().lower() in {"1", "true", "yes", "on"}
+    verbose = _parse_bool_env("INFERENCE_VERBOSE", default=False)
     inference_log_to_file = DEFAULT_INFERENCE_LOG_TO_FILE
     inference_log_file_path = DEFAULT_INFERENCE_LOG_FILE_PATH
 
@@ -213,6 +272,7 @@ def resolve_config() -> Dict[str, Any]:
         "api_base": api_base,
         "local_image_name": local_image_name,
         "env_base": env_base,
+        "env_base_fallbacks": env_base_fallbacks,
         "task_name": task_name,
         "tasks": tasks,
         "run_all_tasks": run_all_tasks,
@@ -577,34 +637,69 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
             if config["verbose"]:
                 LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
 
+        final_score = _strict_unit_interval(float(final_score))
         success_threshold = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
         success = final_score >= success_threshold
-        return float(final_score)
+        return final_score
     finally:
         env_client.close()
         log_end(success=success, steps=steps_taken, rewards=rewards)
 
 
-def check_environment_server(config: Dict[str, Any]) -> None:
+def check_environment_server(config: Dict[str, Any]) -> tuple[bool, str | None]:
     """Validate environment server connectivity before inference runs."""
     base_url = config["env_base"].rstrip("/")
     health_url = f"{base_url}/health"
     try:
         response = requests.get(health_url, timeout=5)
         response.raise_for_status()
+        return True, None
     except requests.RequestException as exc:
-        raise RuntimeError(
+        return False, (
             "Unable to reach environment server at "
             f"{base_url}. Start it first with: "
             "`uvicorn ticket_triage_env.server.app:app --host 0.0.0.0 --port 8000` "
             "or run the Docker container and set ENV_BASE_URL accordingly. "
             f"Original error: {exc}"
-        ) from exc
+        )
+
+
+def select_reachable_env_base(config: Dict[str, Any]) -> tuple[str | None, str | None]:
+    candidates = [config["env_base"], *config.get("env_base_fallbacks", [])]
+    seen = set()
+    errors: List[str] = []
+
+    for raw in candidates:
+        candidate = _normalize_space_url(raw)
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+
+        probe_cfg = {**config, "env_base": candidate}
+        ok, err = check_environment_server(probe_cfg)
+        if ok:
+            return candidate, None
+        if err:
+            errors.append(f"{candidate}: {err}")
+
+    if errors:
+        return None, " | ".join(errors)
+    return None, "No environment base URL candidates configured"
 
 
 def main() -> None:
     load_env_file()
-    config = resolve_config()
+    config: Dict[str, Any]
+    try:
+        config = resolve_config()
+    except Exception as exc:
+        task_name = os.getenv("TASK_NAME") or DEFAULT_TASK_NAME
+        benchmark = os.getenv("BENCHMARK") or DEFAULT_BENCHMARK
+        model_name = os.getenv("MODEL_NAME") or os.getenv("LLM_MODEL") or "unknown"
+        log_start(task_name=task_name, benchmark=benchmark, model_name=model_name)
+        log_end(success=False, steps=0, rewards=[])
+        LOGGER.error("inference_config_failed error=%s", str(exc))
+        return
 
     default_level = "INFO" if config["verbose"] else "ERROR"
     handlers: List[logging.Handler] = [logging.StreamHandler()]
@@ -622,7 +717,13 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.ERROR)
     logging.getLogger("openai").setLevel(logging.ERROR)
 
-    client = OpenAI(base_url=config["api_base"], api_key=config["api_key"])
+    try:
+        client = OpenAI(base_url=config["api_base"], api_key=config["api_key"])
+    except Exception as exc:
+        log_start(task_name=config["task_name"], benchmark=config["benchmark"], model_name=config["model"])
+        log_end(success=False, steps=0, rewards=[])
+        LOGGER.error("inference_client_init_failed error=%s", str(exc))
+        return
     if config["verbose"]:
         LOGGER.info(
             "inference_start provider=%s model=%s api_base=%s env_base=%s",
@@ -631,14 +732,32 @@ def main() -> None:
             config["api_base"],
             config["env_base"],
         )
-    check_environment_server(config)
+    selected_env_base, env_error = select_reachable_env_base(config)
+    if selected_env_base:
+        if selected_env_base != config["env_base"]:
+            LOGGER.error(
+                "environment_preflight_fallback original=%s selected=%s",
+                config["env_base"],
+                selected_env_base,
+            )
+        config["env_base"] = selected_env_base
+    elif env_error:
+        LOGGER.error("environment_preflight_failed error=%s", env_error)
+
     if config["run_all_tasks"]:
         baseline_scores: Dict[str, float] = {}
         for task in config["tasks"]:
-            baseline_scores[task] = run_task(client, task, config)
+            try:
+                baseline_scores[task] = run_task(client, task, config)
+            except Exception as exc:
+                LOGGER.error("task_run_failed task=%s error=%s", task, str(exc))
+                baseline_scores[task] = STRICT_SCORE_EPSILON
         log_baseline(baseline_scores, seed=config["seed"], temperature=config["temperature"])
     else:
-        run_task(client, config["task_name"], config)
+        try:
+            run_task(client, config["task_name"], config)
+        except Exception as exc:
+            LOGGER.error("task_run_failed task=%s error=%s", config["task_name"], str(exc))
 
 
 if __name__ == "__main__":
