@@ -514,9 +514,14 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
         llm_calls = 0
         for step_idx in range(config["max_steps"]):
             if result.get("done"):
-                final_score = float(result.get("info", {}).get("final_score", 0.0))
+                final_score = _strict_unit_interval(float(result.get("info", {}).get("final_score", 0.0)))
                 if config["verbose"]:
-                    LOGGER.info("task_done task_id=%s step=%s final_score=%.3f", task_id, step_idx, final_score)
+                    LOGGER.info(
+                        "task_done task_id=%s step=%s final_score=%s",
+                        task_id,
+                        step_idx,
+                        _format_strict_score(final_score),
+                    )
                 break
 
             observation = result["observation"]
@@ -632,7 +637,7 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
             if config["verbose"]:
                 LOGGER.info("env_request method=POST path=/step task_id=%s action_type=submit_batch", task_id)
             batch_result = env_client.step(TicketTriageAction(action_type=ActionType.SUBMIT_BATCH))
-            final_score = float(batch_result.get("info", {}).get("final_score", 0.0))
+            final_score = _strict_unit_interval(float(batch_result.get("info", {}).get("final_score", 0.0)))
             forced_reward = float(batch_result.get("reward", 0.0))
             rewards.append(forced_reward)
             steps_taken += 1
@@ -645,7 +650,11 @@ def run_task(client: OpenAI, task_id: str, config: Dict[str, Any]) -> float:
                 error=None,
             )
             if config["verbose"]:
-                LOGGER.info("task_done_forced task_id=%s final_score=%.3f", task_id, final_score)
+                LOGGER.info(
+                    "task_done_forced task_id=%s final_score=%s",
+                    task_id,
+                    _format_strict_score(final_score),
+                )
 
         final_score = _strict_unit_interval(float(final_score))
         success_threshold = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.5"))
