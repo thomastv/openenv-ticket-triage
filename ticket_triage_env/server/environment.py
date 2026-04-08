@@ -81,7 +81,7 @@ class TicketTriageEnvironment:
         observation = self._build_observation(self.current_ticket_id)
         return {
             "observation": observation.model_dump(mode="json"),
-            "reward": 0.0,
+            "reward": STRICT_SCORE_EPSILON,
             "done": False,
             "info": {"task_id": self.task_id},
         }
@@ -91,7 +91,7 @@ class TicketTriageEnvironment:
             observation = self._build_observation(self.current_ticket_id)
             return {
                 "observation": observation.model_dump(mode="json"),
-                "reward": 0.0,
+                "reward": STRICT_SCORE_EPSILON,
                 "done": True,
                 "info": {"message": "Episode already done"},
             }
@@ -122,20 +122,30 @@ class TicketTriageEnvironment:
             self._done = True
             self._validation_feedback.append("Max steps reached")
 
+        final_score_for_step: float | None = None
         if self._done:
             final_score, breakdown = self._final_score()
+            final_score_for_step = final_score
             info["final_score"] = final_score
             info["per_ticket_breakdown"] = breakdown
+            info["score"] = final_score
+            info["task_score"] = final_score
             if final_score >= 0.85:
                 reward_delta += 0.2
                 self.cumulative_reward += 0.2
+
+        reported_reward = (
+            _strict_unit_interval(final_score_for_step)
+            if final_score_for_step is not None
+            else _strict_unit_interval(reward_delta)
+        )
 
         self._last_action_result = LastActionResult(success=success, message=message)
 
         observation = self._build_observation(self.current_ticket_id)
         return {
             "observation": observation.model_dump(mode="json"),
-            "reward": reward_delta,
+            "reward": reported_reward,
             "done": self._done,
             "info": info,
         }

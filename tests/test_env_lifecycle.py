@@ -14,6 +14,7 @@ def test_reset_step_state_lifecycle() -> None:
     env = TicketTriageEnvironment()
     result = env.reset("easy")
     assert result["done"] is False
+    assert 0.0 < result["reward"] < 1.0
 
     ticket_id = result["observation"]["ticket_view"]["ticket"]["ticket_id"]
     step_result = env.step(TicketTriageAction(action_type=ActionType.INSPECT_TICKET, ticket_id=ticket_id))
@@ -32,7 +33,7 @@ def test_missing_ticket_id_returns_error() -> None:
     env.reset("easy")
     result = env.step(TicketTriageAction(action_type=ActionType.SET_FIELDS))
     assert result["observation"]["last_action_result"]["success"] is False
-    assert result["reward"] < 0
+    assert 0.0 < result["reward"] < 1.0
 
 
 def test_step_after_done_returns_done() -> None:
@@ -41,7 +42,7 @@ def test_step_after_done_returns_done() -> None:
     env.step(TicketTriageAction(action_type=ActionType.SUBMIT_BATCH))
     result = env.step(TicketTriageAction(action_type=ActionType.NOOP))
     assert result["done"] is True
-    assert result["reward"] == 0.0
+    assert 0.0 < result["reward"] < 1.0
 
 
 def test_full_episode_easy_reaches_done_with_good_score() -> None:
@@ -97,6 +98,7 @@ def test_full_episode_easy_reaches_done_with_good_score() -> None:
 
     assert terminal_result is not None
     assert terminal_result["done"] is True
+    assert 0.0 < terminal_result["reward"] < 1.0
     assert terminal_result["info"]["final_score"] >= 0.85
 
 
