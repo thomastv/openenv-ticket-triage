@@ -25,10 +25,14 @@ def _strict_unit_interval(value: float) -> float:
     return value
 
 
+def _binary_match(actual: object, expected: object) -> float:
+    return 1.0 if actual == expected else 0.0
+
+
 def _response_component(response_text: str | None, answer: Dict[str, object]) -> float:
     text = (response_text or "").strip().lower()
     if not text or len(text) < MIN_RESPONSE_LENGTH:
-        return 0.0
+        return _strict_unit_interval(0.0)
 
     required_keywords: List[str] = [
         str(value).lower() for value in answer.get("response_required_keywords", [])
@@ -59,21 +63,32 @@ def _response_component(response_text: str | None, answer: Dict[str, object]) ->
     contains_next_step = 1.0 if any(k in text for k in ["next", "please", "we will", "you can"]) else 0.0
 
     # Weighted deterministic compliance rubric.
-    return (
+    score = (
         0.45 * required_score
         + 0.20 * prohibited_ok
         + 0.10 * length_ok
         + 0.125 * contains_ack
         + 0.125 * contains_next_step
     )
+    return _strict_unit_interval(score)
 
 
 def score_ticket(decision: TicketDecision, answer: Dict[str, object]) -> Dict[str, float]:
-    category_score = 1.0 if decision.category and decision.category.value == answer.get("category") else 0.0
-    priority_score = 1.0 if decision.priority and decision.priority.value == answer.get("priority") else 0.0
-    queue_score = 1.0 if decision.queue and decision.queue.value == answer.get("queue") else 0.0
-    next_action_score = (
-        1.0 if decision.next_action and decision.next_action.value == answer.get("next_action") else 0.0
+    category_score = _binary_match(
+        decision.category.value if decision.category else None,
+        answer.get("category"),
+    )
+    priority_score = _binary_match(
+        decision.priority.value if decision.priority else None,
+        answer.get("priority"),
+    )
+    queue_score = _binary_match(
+        decision.queue.value if decision.queue else None,
+        answer.get("queue"),
+    )
+    next_action_score = _binary_match(
+        decision.next_action.value if decision.next_action else None,
+        answer.get("next_action"),
     )
     response_score = _response_component(decision.response_text, answer)
 

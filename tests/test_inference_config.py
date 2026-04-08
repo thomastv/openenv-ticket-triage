@@ -89,3 +89,18 @@ def test_call_model_retries_on_malformed_json(monkeypatch):
     assert client.chat.completions.calls == 2
     assert plan["category"] == "billing_dispute"
     assert plan["priority"] == "high"
+
+
+def test_log_baseline_does_not_round_to_boundaries(capsys):
+    inference.log_baseline(
+        {
+            "easy": inference.STRICT_SCORE_EPSILON,
+            "medium": 1.0 - inference.STRICT_SCORE_EPSILON,
+        },
+        seed=42,
+        temperature=0.0,
+    )
+    out = capsys.readouterr().out.strip()
+    assert "easy=0.000001" in out
+    assert "medium=0.999999" in out
+    assert "overall=0.500000" in out

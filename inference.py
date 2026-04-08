@@ -310,13 +310,23 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}", flush=True)
 
 
+def _format_strict_score(value: float) -> str:
+    """Format scores without rounding strict in-range values to 0.000/1.000."""
+    return f"{_strict_unit_interval(value):.6f}"
+
+
 def log_baseline(scores: Dict[str, float], seed: int, temperature: float) -> None:
     ordered_tasks = [task for task in DEFAULT_BASELINE_TASKS if task in scores]
     extras = sorted(task for task in scores.keys() if task not in ordered_tasks)
     ordered_tasks.extend(extras)
-    overall = sum(scores.values()) / len(scores) if scores else 0.0
-    parts = [f"{task}={scores[task]:.3f}" for task in ordered_tasks]
-    parts.append(f"overall={overall:.3f}")
+    normalized_scores = {task: _strict_unit_interval(float(value)) for task, value in scores.items()}
+    overall = (
+        _strict_unit_interval(sum(normalized_scores.values()) / len(normalized_scores))
+        if normalized_scores
+        else STRICT_SCORE_EPSILON
+    )
+    parts = [f"{task}={_format_strict_score(normalized_scores[task])}" for task in ordered_tasks]
+    parts.append(f"overall={_format_strict_score(overall)}")
     parts.append(f"seed={seed}")
     parts.append(f"temp={temperature:.1f}")
     print(f"[BASELINE] {' '.join(parts)}", flush=True)
@@ -734,12 +744,6 @@ def main() -> None:
         )
     selected_env_base, env_error = select_reachable_env_base(config)
     if selected_env_base:
-        if selected_env_base != config["env_base"]:
-            LOGGER.error(
-                "environment_preflight_fallback original=%s selected=%s",
-                config["env_base"],
-                selected_env_base,
-            )
         config["env_base"] = selected_env_base
     elif env_error:
         LOGGER.error("environment_preflight_failed error=%s", env_error)
