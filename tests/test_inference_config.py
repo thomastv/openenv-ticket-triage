@@ -101,6 +101,6 @@ def test_log_baseline_does_not_round_to_boundaries(capsys):
         temperature=0.0,
     )
     out = capsys.readouterr().out.strip()
-    assert "easy=0.000001" in out
-    assert "medium=0.999999" in out
+    assert "easy=0.010000" in out
+    assert "medium=0.990000" in out
     assert "overall=0.500000" in out

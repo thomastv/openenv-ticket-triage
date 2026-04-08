@@ -22,7 +22,7 @@ from ticket_triage_env.models import (
 )
 
 
-STRICT_SCORE_EPSILON = 1e-6
+STRICT_SCORE_EPSILON = 0.01
 
 
 def _strict_unit_interval(value: float) -> float:
