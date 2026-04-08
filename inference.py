@@ -299,14 +299,15 @@ def log_start(task_name: str, benchmark: str, model_name: str) -> None:
 
 def log_step(step: int, action: str, reward: float, done: bool, error: str | None) -> None:
     error_value = error if error else "null"
+    reward_text = _format_strict_score(reward)
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={_bool_text(done)} error={error_value}",
+        f"[STEP] step={step} action={action} reward={reward_text} done={_bool_text(done)} error={error_value}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_text = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_text = ",".join(_format_strict_score(r) for r in rewards)
     print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}", flush=True)
 
 
@@ -327,8 +328,6 @@ def log_baseline(scores: Dict[str, float], seed: int, temperature: float) -> Non
     )
     parts = [f"{task}={_format_strict_score(normalized_scores[task])}" for task in ordered_tasks]
     parts.append(f"overall={_format_strict_score(overall)}")
-    parts.append(f"seed={seed}")
-    parts.append(f"temp={temperature:.1f}")
     print(f"[BASELINE] {' '.join(parts)}", flush=True)
 
 
