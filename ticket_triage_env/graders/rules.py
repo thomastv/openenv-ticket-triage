@@ -18,9 +18,9 @@ STRICT_SCORE_EPSILON = 0.01
 
 
 def _strict_unit_interval(value: float) -> float:
-    if value <= 0.0:
+    if value < STRICT_SCORE_EPSILON:
         return STRICT_SCORE_EPSILON
-    if value >= 1.0:
+    if value > 1.0 - STRICT_SCORE_EPSILON:
         return 1.0 - STRICT_SCORE_EPSILON
     return value
 

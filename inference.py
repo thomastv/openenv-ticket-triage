@@ -61,9 +61,9 @@ def _parse_bool_env(*names: str, default: bool = False) -> bool:
 
 
 def _strict_unit_interval(value: float) -> float:
-    if value <= 0.0:
+    if value < STRICT_SCORE_EPSILON:
         return STRICT_SCORE_EPSILON
-    if value >= 1.0:
+    if value > 1.0 - STRICT_SCORE_EPSILON:
         return 1.0 - STRICT_SCORE_EPSILON
     return value
 
@@ -299,7 +299,7 @@ def log_start(task_name: str, benchmark: str, model_name: str) -> None:
 
 def log_step(step: int, action: str, reward: float, done: bool, error: str | None) -> None:
     error_value = error if error else "null"
-    reward_text = _format_strict_score(reward)
+    reward_text = f"{_strict_unit_interval(reward):.2f}"
     print(
         f"[STEP] step={step} action={action} reward={reward_text} done={_bool_text(done)} error={error_value}",
         flush=True,
@@ -307,7 +307,7 @@ def log_step(step: int, action: str, reward: float, done: bool, error: str | Non
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_text = ",".join(_format_strict_score(r) for r in rewards)
+    rewards_text = ",".join(f"{_strict_unit_interval(r):.2f}" for r in rewards)
     print(f"[END] success={_bool_text(success)} steps={steps} rewards={rewards_text}", flush=True)
 
 
